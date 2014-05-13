@@ -1,4 +1,5 @@
 .DS_Store
+*.xcworkspace
 
 # Compiled Object files
 *.slo
