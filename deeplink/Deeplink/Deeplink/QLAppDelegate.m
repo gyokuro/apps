@@ -37,8 +37,8 @@
 {
     NSLog(@"openURL app=%@ source=%@ annotation=%@ url=%@", application, sourceApplication, annotation, url);
     return [[XLinks sharedInstance] handleAppUrl:url withHandler:^bool(NSArray *pathComponents, NSDictionary *params) {
-        NSLog(@"handled url with parts %@", pathComponents);
-        [_deeplinkDelegate handleContent:pathComponents[1]];
+        NSLog(@"handled url with parts %@ and params %@", pathComponents, params);
+        [_deeplinkDelegate handleContent:[params objectForKey:@"url"]];
         return YES;
     }];
 }
