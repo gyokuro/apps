@@ -12,12 +12,14 @@
 
 + (XLinks*)sharedInstance;
 
-typedef bool(^appUrlHandler)(NSArray *pathComponents, NSDictionary *params);
 
-- (BOOL)isAppInstallRegistered;
+- (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken;
+
 - (BOOL)clearAppInstall;
-- (void)registerAppInstall:(NSString *)appUrlScheme;
-- (BOOL)markAppAsInstalled:(NSString *)cookie;
-- (BOOL)handleAppUrl:(NSURL*)url withHandler:(appUrlHandler)handler;
+- (void)reportInstall;
+
+// Intercepts
+- (BOOL)application:(UIApplication*)application OpenURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation;
+- (void)applicationDidBecomeActive:(UIApplication *)application;
 
 @end

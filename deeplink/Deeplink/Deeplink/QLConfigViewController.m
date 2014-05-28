@@ -55,7 +55,7 @@
 }
 - (IBAction)onReportInstall:(id)sender {
     NSLog(@"Report install");
-    [[XLinks sharedInstance] registerAppInstall:@"qldeeplink"];
+    [[XLinks sharedInstance] reportInstall];
 }
 - (IBAction)onGenerateShortURL:(id)sender {
     NSString *json = [self buildJsonWithLongUrl:_contentLocation.text appStoreUrl:_appstoreUrl.text appDeeplinkUrl:_appDeeplinkURL.text];
