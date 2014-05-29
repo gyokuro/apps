@@ -41,7 +41,7 @@
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
 {
     // Intercepts
-    [[XLinks sharedInstance] application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
+    //[[XLinks sharedInstance] application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
     
     // Normal program processing
     NSDictionary *params = [self parseQueryString:[url query]];

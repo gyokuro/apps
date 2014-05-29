@@ -19,16 +19,42 @@
 #include <net/if_dl.h>
 #include <ifaddrs.h>
 
-#if ! defined(IFT_ETHER)
-#define IFT_ETHER 0x6/* Ethernet CSMACD */
-#endif
+#define KEY_SOURCE_APPLICATION @"sourceApplication"
+#define KEY_UUID @"uuid"
+#define KEY_SHORT_CODE @"shortCode"
+#define KEY_DEEP_LINK @"deeplink"
+#define KEY_FINGERPRINTED @"fingerprinted"
+
+#define URL_QUERY_UUID @"__xrlc"
+#define URL_QUERY_SCHEME @"__xrlp"
+#define URL_QUERY_SHORT_CODE @"__xrls"
+
+
+@interface NSDictionary(JSON)
+- (NSData*)toJSON;
+@end
+
+@implementation NSDictionary(JSON)
+- (NSData*)toJSON
+{
+    NSError *error;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:self options:NSJSONWritingPrettyPrinted error:&error];
+    if (error == nil) {
+        NSString *json = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
+        return [json dataUsingEncoding:NSUTF8StringEncoding];
+    }
+    return [@"" dataUsingEncoding:NSUTF8StringEncoding];
+}
+@end
+
 
 @interface XLinks ()
+@property (atomic, readwrite) NSString *urlScheme;
+@property (atomic, readwrite) BOOL reportingInstallThroughSafari;
+
 @property (atomic) NSString *apiToken;
-@property (atomic) NSString *urlScheme;
 @property (atomic) NSString *shortCode;
 @property (atomic) NSString *contextUuid;
-@property (atomic) BOOL reportingInstallThroughSafari;
 @property (atomic) id<UIApplicationDelegate> appDelegate;
 @end
 
@@ -37,12 +63,14 @@
     dispatch_queue_t backgroundQueue;
 }
 
+
 + (XLinks*)sharedInstance {
     static XLinks *_sharedInstance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         _sharedInstance = [[self alloc] init];
         _sharedInstance->backgroundQueue = dispatch_queue_create("_xlinks_", NULL);
+
     });
     return _sharedInstance;
 }
@@ -67,57 +95,33 @@
         Method originalMethod = class_getInstanceMethod(object_getClass(_appDelegate), originalSelector);
         Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
         
-        BOOL didAddMethod = class_addMethod(class,
-                        originalSelector,
-                        method_getImplementation(swizzledMethod),
-                        method_getTypeEncoding(swizzledMethod));
+        BOOL didAddMethod = class_addMethod(object_getClass(_appDelegate),
+                                            originalSelector,
+                                            method_getImplementation(swizzledMethod),
+                                            method_getTypeEncoding(swizzledMethod));
         
         if (didAddMethod) {
-            class_replaceMethod(class,
+            class_replaceMethod(object_getClass(_appDelegate),
                                 swizzledSelector,
                                 method_getImplementation(originalMethod),
                                 method_getTypeEncoding(originalMethod));
         } else {
             method_exchangeImplementations(originalMethod, swizzledMethod);
         }
+        
     });
      */
     
 }
 
-+ (NSDictionary *)readNetworkInterfaces {
-    NSMutableDictionary * networkInterfaces = [NSMutableDictionary dictionary];
-    struct ifaddrs * addrs;
-    struct ifaddrs * cursor;
-    
-    if (getifaddrs(&addrs) == 0) {
-        cursor = addrs;
-        while (cursor != 0) {
-            char * ifa_name = cursor->ifa_name;
-            if (cursor->ifa_addr->sa_family == AF_LINK) {
-                const struct sockaddr_dl * dl_addr = (const struct sockaddr_dl *)(cursor->ifa_addr);
-                
-                if (dl_addr->sdl_type == IFT_ETHER) {
-                    NSData * macAddressData = [NSData dataWithBytes:LLADDR(dl_addr) length:dl_addr->sdl_alen];
-                    NSString * networkInterfaceName = [[NSString alloc] initWithBytes:ifa_name length:strlen(ifa_name) encoding:NSASCIIStringEncoding];
-                    [networkInterfaces setObject:macAddressData forKey:networkInterfaceName];
-                }
-            }
-            cursor = cursor->ifa_next;
-        }
-        freeifaddrs(addrs);
-    }
-    return networkInterfaces;
-}
-
-- (NSString*)getCookieFile
++ (NSString*)getCookieFile
 {
     NSArray *dirPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *docsDir = dirPaths[0];
     return [NSString stringWithFormat:@"%@/cookie", docsDir];
 }
 
-- (NSString*)getAppUUID
++ (NSString*)getAppUUID
 {
     return [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
 }
@@ -126,87 +130,68 @@
 {
     NSError *err;
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    return[fileManager removeItemAtPath:[self getCookieFile] error:&err];
+    return[fileManager removeItemAtPath:[XLinks getCookieFile] error:&err];
 }
 
 - (BOOL)hasReportedInstall
 {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    return[fileManager fileExistsAtPath:[self getCookieFile]];
+    return[fileManager fileExistsAtPath:[XLinks getCookieFile]];
 }
 
 - (void)reportInstall
 {
-    [self reportInstall:YES shortCode:_shortCode contextUUID:_contextUuid];
+    [self reportInstall:YES shortCode:_shortCode contextUUID:_contextUuid url:nil sourceApplication:nil];
 }
 
-- (NSData*)buildPayload:(id)map
-{
-    NSError *error;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:map
-                                                       options:NSJSONWritingPrettyPrinted
-                                                         error:&error];
-    if (error == nil) {
-        NSString *json = [[NSString alloc]initWithData:jsonData encoding:NSUTF8StringEncoding];
-        return [json dataUsingEncoding:NSUTF8StringEncoding];
-    }
-    return [@"" dataUsingEncoding:NSUTF8StringEncoding];
-}
-
-#define KEY_SOURCE_APPLICATION @"sourceApplication"
-#define KEY_UUID @"uuid"
-#define KEY_SHORT_CODE @"shortCode"
-#define KEY_DEEP_LINK @"deeplink"
-#define KEY_FINGERPRINTED @"fingerprinted"
-
-#define URL_QUERY_UUID @"__xrlc"
-#define URL_QUERY_SCHEME @"__xrlp"
-#define URL_QUERY_SHORT_CODE @"__xrls"
-
-- (void)reportInstall:(BOOL)throughSafari shortCode:(NSString*)shortCode contextUUID:(NSString*)contextUuid
+- (void)reportInstall:(BOOL)throughSafari shortCode:(NSString*)shortCode contextUUID:(NSString*)contextUuid url:(NSURL*)url sourceApplication:(NSString*)sourceApplication
 {
     _reportingInstallThroughSafari = throughSafari;
     
     dispatch_async(self->backgroundQueue, ^(void) {
         // Use the browser to make a call back, which will send any cookies and allow the server to
         // associate the user with a content.  The server will then send a redirect
-        NSString *idfa = [self getAppUUID];
+        NSString *idfa = [XLinks getAppUUID];
         
         if (throughSafari) {
             NSString *format = @"http://qor.io/i/%@/%@";
             NSURL *home = [NSURL URLWithString:[NSString stringWithFormat:format, _urlScheme, idfa]];
             
-            NSLog(@"Report install via GET %@", home);
+            NSLog(@"XLinks - Report install via GET %@", home);
             
             [[UIApplication sharedApplication] openURL:home];
+            
+            // Saves locally to be checked next time.
+            [[XLinks sharedInstance] saveInvocationContext:contextUuid sourceApplication:sourceApplication withShortCode:shortCode url:url];
+
         } else {
             NSString *format = @"https://qor.io/api/v1/events/install/%@/%@";
             NSURL *home = [NSURL URLWithString:[NSString stringWithFormat:format, _urlScheme, idfa]];
 
-            NSLog(@"Report install via POST %@", home);
+            NSLog(@"XLinks - Report install via POST %@", home);
             
             NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:home];
             request.HTTPMethod = @"POST";
             [request addValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 
             NSMutableDictionary *message = [@{} mutableCopy];
-            if (shortCode != nil) {
-                [message setObject:shortCode forKey:KEY_SHORT_CODE];
-            }
-            if (contextUuid != nil) {
-                [message setObject:contextUuid forKey:KEY_UUID];
-            }
+            if (shortCode) [message setObject:shortCode forKey:KEY_SHORT_CODE];
+            if (contextUuid) [message setObject:contextUuid forKey:KEY_UUID];
             [message setObject:@"." forKey:KEY_SOURCE_APPLICATION];
             [message setObject:@"." forKey:KEY_DEEP_LINK];
             
-            [request setHTTPBody:[self buildPayload:message]];
+            [request setHTTPBody:[message toJSON]];
             [NSURLConnection sendAsynchronousRequest:request
                                                queue:[NSOperationQueue mainQueue]
                                    completionHandler:^(NSURLResponse *response,
                                                        NSData *data,
                                                        NSError *connectionError) {
                                        // Handle response
-                                       NSLog(@"Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                       NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                       if ([(NSHTTPURLResponse*)response statusCode] == 200) {
+
+                                           [[XLinks sharedInstance] saveInvocationContext:(contextUuid)?contextUuid:idfa sourceApplication:@"." withShortCode:shortCode?shortCode:@"." url:url];
+                                       }
                                    }];
         }
     });
@@ -214,18 +199,19 @@
 
 - (NSDictionary*)saveInvocationContext:(NSString *)cookie sourceApplication:(NSString*)sourceApplication withShortCode:(NSString*)shortCode url:(NSURL*)url
 {
-    NSString *key = (sourceApplication != nil)? sourceApplication : @".";
-    NSString *value = [NSString stringWithFormat:@"%@:%@:%@", (shortCode != nil)? shortCode : @"",(cookie != nil)? cookie : @"", [url absoluteString]];
-    NSString *cookieFile = [self getCookieFile];
+    NSString *key = (sourceApplication)? sourceApplication : @".";
+    NSString *value = [NSString stringWithFormat:@"%@:%@:%@", shortCode?shortCode:@"",cookie?cookie:@"", [url absoluteString]];
+    NSString *cookieFile = [XLinks getCookieFile];
     NSMutableDictionary *map = [[NSMutableDictionary alloc]init];
     
     NSFileManager *fileManager = [NSFileManager defaultManager];
     if ([fileManager fileExistsAtPath:cookieFile]) {
-        map = [map initWithContentsOfFile:[self getCookieFile]];
+        map = [map initWithContentsOfFile:[XLinks getCookieFile]];
     }
     
     [map setObject:value forKey:key];
     [map writeToFile:cookieFile atomically:YES];
+    NSLog(@"XLink - Saved cookie file.");
     return map;
 }
 
@@ -250,26 +236,17 @@
     NSString *scheme = [params objectForKey:URL_QUERY_SCHEME];
     NSString *shortcode = [params objectForKey:URL_QUERY_SHORT_CODE];
     
-    NSLog(@"appOpenWithURL: url=%@ application=%@ uuid=%@ scheme=%@ shortcode=%@ annotation=%@", url, sourceApplication, uuid, scheme, shortcode, annotation);
+    NSLog(@"XLinks - appOpenWithURL: url=%@ application=%@ uuid=%@ scheme=%@ shortcode=%@ annotation=%@", url, sourceApplication, uuid, scheme, shortcode, annotation);
     
-    if (_reportingInstallThroughSafari) {
-        // Saves locally to be checked next time.
-        [self saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortcode url:url];
-    } else if (![self hasReportedInstall]) {
-        [self reportInstall:NO shortCode:shortcode contextUUID:uuid];
+    if (![self hasReportedInstall]) {
+        [[XLinks sharedInstance] reportInstall:NO shortCode:shortcode contextUUID:uuid url:url sourceApplication:sourceApplication];
     }
     
-    // We store locally a list of context uuids
-    NSDictionary *map;
-    if (uuid != nil) {
-        map = [self saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortcode url:url];
-    }
-    
+    // Important to check -- since other apps could call this without passing in these params
     if (uuid != nil && scheme != nil && shortcode != nil) {
-        
         // Notify the cloud that this app is still here.
-        NSURL *ping = [NSURL URLWithString:[NSString stringWithFormat:@"https://qor.io/api/v1/events/openurl/%@/%@", _urlScheme, [self getAppUUID]]];
-        NSLog(@"Sending app openurl to %@", ping);
+        NSURL *ping = [NSURL URLWithString:[NSString stringWithFormat:@"https://qor.io/api/v1/events/openurl/%@/%@", scheme, [XLinks getAppUUID]]];
+        NSLog(@"XLinks - Sending app openurl to %@", ping);
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ping];
         request.HTTPMethod = @"POST";
         [request addValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -280,28 +257,36 @@
         [appOpen setObject:uuid forKey:KEY_UUID];
         [appOpen setObject:[url absoluteString] forKey:KEY_DEEP_LINK];
 
-        [request setHTTPBody:[self buildPayload:appOpen]];
+        [request setHTTPBody:[appOpen toJSON]];
         [NSURLConnection sendAsynchronousRequest:request
                                            queue:[NSOperationQueue mainQueue]
                                completionHandler:^(NSURLResponse *response,
                                                    NSData *data,
                                                    NSError *connectionError) {
-                                   NSLog(@"Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                   NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                   // TODO - do we want to retry this if failed?
                                }];
         // Save a local copy -- not really necessary
-        [self saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortcode url:url];
+//        [[XLinks sharedInstance] saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortcode url:url];
     }
-    return YES; //[self xlink__application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
+    return  YES; //[self xlink__application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
+}
+
+- (BOOL)callAppDelegateOpenUrl:(NSURL*)url annotation:(id)annotation sourceApplication:(NSString*)sourceApplication
+{
+    return [_appDelegate application:[UIApplication sharedApplication] openURL:url sourceApplication:sourceApplication annotation:annotation];
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
-    if (![self hasReportedInstall]) {
+    if ([[XLinks sharedInstance] hasReportedInstall]) {
+        NSLog(@"XLinks - Reported install already. Skipping.");
+    } else {
         // We first try a POST to the api to TRY TO MATCH by fingerprint.  If that isn't successful, then
         // open safari to report the install
         // Notify the cloud that this app is still here.
-        NSURL *ping = [NSURL URLWithString:[NSString stringWithFormat:@"https://qor.io/api/v1/tryfp/%@/%@", _urlScheme, [self getAppUUID]]];
-        NSLog(@"Attempting to match install by fingerprint %@", ping);
+        NSURL *ping = [NSURL URLWithString:[NSString stringWithFormat:@"https://qor.io/api/v1/tryfp/%@/%@", _urlScheme, [XLinks getAppUUID]]];
+        NSLog(@"XLinks - Attempting to match install by fingerprint %@", ping);
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ping];
         request.HTTPMethod = @"POST";
         [request addValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -311,7 +296,7 @@
                                                    NSData *data,
                                                    NSError *connectionError) {
                                    // Handle response
-                                   NSLog(@"Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                   NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
                                    
                                    // Check for response code. If it's not 200, then try to report via safari.
                                    if ([response class] == [NSHTTPURLResponse class]) {
@@ -328,27 +313,56 @@
                                            NSString *shortCode = [message objectForKey:KEY_SHORT_CODE];
                                            
                                            
-                                           NSLog(@"Got deeplink %@ and source appliction %@", deeplink, sourceApplication);
+                                           NSLog(@"XLinks - Got deeplink %@ and source appliction %@", deeplink, sourceApplication);
                                            
                                            if (deeplink) {
                                                
                                                NSURL *deeplinkUrl = [NSURL URLWithString:deeplink];
                                                
                                                // Save the state as reported so we won't report another install.
-                                               [self saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortCode url:deeplinkUrl];
+                                               [[XLinks sharedInstance] saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortCode url:deeplinkUrl];
                                                
-                                               NSLog(@"Reopen application with deeplink %@ via delegate method", deeplinkUrl);
+                                               NSLog(@"XLinks - Reopen application with deeplink %@ via delegate method", deeplinkUrl);
                                                
-                                               [_appDelegate application:[UIApplication sharedApplication] openURL:deeplinkUrl sourceApplication:sourceApplication annotation:nil];
+                                               [[XLinks sharedInstance] callAppDelegateOpenUrl:deeplinkUrl annotation:nil sourceApplication:sourceApplication];
                                            }
                                            
                                        } else {
-                                           NSLog(@"Reporting install VIA SAFARI");
+                                           NSLog(@"XLinks - Reporting install VIA SAFARI");
                                            [self reportInstall]; // Use safari
                                        }
                                    }
                                }];
     }
+}
+
+#if ! defined(IFT_ETHER)
+#define IFT_ETHER 0x6/* Ethernet CSMACD */
+#endif
+
++ (NSDictionary *)readNetworkInterfaces {
+    NSMutableDictionary * networkInterfaces = [NSMutableDictionary dictionary];
+    struct ifaddrs * addrs;
+    struct ifaddrs * cursor;
+    
+    if (getifaddrs(&addrs) == 0) {
+        cursor = addrs;
+        while (cursor != 0) {
+            char * ifa_name = cursor->ifa_name;
+            if (cursor->ifa_addr->sa_family == AF_LINK) {
+                const struct sockaddr_dl * dl_addr = (const struct sockaddr_dl *)(cursor->ifa_addr);
+                
+                if (dl_addr->sdl_type == IFT_ETHER) {
+                    NSData * macAddressData = [NSData dataWithBytes:LLADDR(dl_addr) length:dl_addr->sdl_alen];
+                    NSString * networkInterfaceName = [[NSString alloc] initWithBytes:ifa_name length:strlen(ifa_name) encoding:NSASCIIStringEncoding];
+                    [networkInterfaces setObject:macAddressData forKey:networkInterfaceName];
+                }
+            }
+            cursor = cursor->ifa_next;
+        }
+        freeifaddrs(addrs);
+    }
+    return networkInterfaces;
 }
 
 
