@@ -7,13 +7,13 @@
 //
 
 #import "QLAppDelegate.h"
-#import "XLinks.h"
+#import "XRL.h"
 #import "TSTapstream.h"
 #import <AdSupport/ASIdentifierManager.h>
 
 @implementation QLAppDelegate
 
-
+#define METHOD_SWIZZLE 1
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
@@ -23,7 +23,7 @@
     config.idfa = [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
     [TSTapstream createWithAccountName:@"dchung" developerSecret:@"p3kBmgmyQK61vnT6ywtjUg" config:config];
 
-    [[XLinks sharedInstance] initWithApplicationDelegate:self appUrlScheme:@"qldeeplink" apiToken:@"xyz12345"];
+    [XRL initWithApplicationDelegate:self appUrlScheme:@"qldeeplink" apiToken:@"xyz12345"];
     return YES;
 }
 							
@@ -34,15 +34,12 @@
 
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
-    NSLog(@"applicationDidBecomeActive app=%@", application);
-    [[XLinks sharedInstance]applicationDidBecomeActive:application];
+    NSLog(@">>> BECOME ACTIVE");
 }
 
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
 {
-    // Intercepts
-    //[[XLinks sharedInstance] application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
-    
+    NSLog(@">>> OPEN URL");
     // Normal program processing
     NSDictionary *params = [self parseQueryString:[url query]];
     [_deeplinkDelegate handleContent:[params objectForKey:@"url"]];

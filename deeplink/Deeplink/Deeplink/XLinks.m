@@ -11,6 +11,7 @@
 #import <AdSupport/ASIdentifierManager.h>
 #import <dispatch/dispatch.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 #include <sys/types.h>
 #include <stdio.h>
@@ -47,7 +48,6 @@
 }
 @end
 
-
 @interface XLinks ()
 @property (atomic, readwrite) NSString *urlScheme;
 @property (atomic, readwrite) BOOL reportingInstallThroughSafari;
@@ -56,13 +56,16 @@
 @property (atomic) NSString *shortCode;
 @property (atomic) NSString *contextUuid;
 @property (atomic) id<UIApplicationDelegate> appDelegate;
+
++(NSDictionary *)parseQueryString:(NSString *)query;
+- (NSDictionary*)saveInvocationContext:(NSString *)cookie sourceApplication:(NSString*)sourceApplication withShortCode:(NSString*)shortCode url:(NSURL*)url;
 @end
+
 
 @implementation XLinks
 {
     dispatch_queue_t backgroundQueue;
 }
-
 
 + (XLinks*)sharedInstance {
     static XLinks *_sharedInstance = nil;
@@ -75,43 +78,13 @@
     return _sharedInstance;
 }
 
-- (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken
++ (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken
 {
-    _urlScheme = appUrlScheme;
-    _apiToken = apiToken;
-    _appDelegate = delegate;
+    XLinks *inst = [XLinks sharedInstance];
     
-    /*
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        Class class = [self class];
-        
-        // When swizzling a class method, use the following:
-        // Class class = object_getClass((id)self);
-        
-        SEL originalSelector = @selector(application:openURL:sourceApplication:annotation:);
-        SEL swizzledSelector = @selector(xlink__application:OpenURL:sourceApplication:annotation:);
-        
-        Method originalMethod = class_getInstanceMethod(object_getClass(_appDelegate), originalSelector);
-        Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
-        
-        BOOL didAddMethod = class_addMethod(object_getClass(_appDelegate),
-                                            originalSelector,
-                                            method_getImplementation(swizzledMethod),
-                                            method_getTypeEncoding(swizzledMethod));
-        
-        if (didAddMethod) {
-            class_replaceMethod(object_getClass(_appDelegate),
-                                swizzledSelector,
-                                method_getImplementation(originalMethod),
-                                method_getTypeEncoding(originalMethod));
-        } else {
-            method_exchangeImplementations(originalMethod, swizzledMethod);
-        }
-        
-    });
-     */
-    
+    inst.urlScheme = appUrlScheme;
+    inst.apiToken = apiToken;
+    inst.appDelegate = delegate;
 }
 
 + (NSString*)getCookieFile
@@ -124,6 +97,35 @@
 + (NSString*)getAppUUID
 {
     return [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
+}
+
++ (BOOL)clearAppInstall
+{
+    return [[XLinks sharedInstance]clearAppInstall];
+}
+
++ (void)reportInstall
+{
+    if ([[XLinks sharedInstance] hasReportedInstall]) {
+        [[XLinks sharedInstance]reportInstall];
+        
+    }
+}
+
++ (BOOL)application:(UIApplication*)application openURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation
+{
+    return [[XLinks sharedInstance]handleApplication:application openURL:url sourceApplication:sourceApplication annotation:annotation];
+}
+
++ (void)applicationDidBecomeActive:(UIApplication *)application
+{
+    [[XLinks sharedInstance]handleApplicationDidBecomeActive:application];
+}
+
+
+- (dispatch_queue_t) queue
+{
+    return backgroundQueue;
 }
 
 - (BOOL)clearAppInstall
@@ -148,7 +150,7 @@
 {
     _reportingInstallThroughSafari = throughSafari;
     
-    dispatch_async(self->backgroundQueue, ^(void) {
+    dispatch_async([[XLinks sharedInstance] queue], ^(void) {
         // Use the browser to make a call back, which will send any cookies and allow the server to
         // associate the user with a content.  The server will then send a redirect
         NSString *idfa = [XLinks getAppUUID];
@@ -187,7 +189,7 @@
                                                        NSData *data,
                                                        NSError *connectionError) {
                                        // Handle response
-                                       NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                       NSLog(@"XLinks - install - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
                                        if ([(NSHTTPURLResponse*)response statusCode] == 200) {
 
                                            [[XLinks sharedInstance] saveInvocationContext:(contextUuid)?contextUuid:idfa sourceApplication:@"." withShortCode:shortCode?shortCode:@"." url:url];
@@ -215,7 +217,8 @@
     return map;
 }
 
-- (NSDictionary *)parseQueryString:(NSString *)query {
++ (NSDictionary *)parseQueryString:(NSString *)query
+{
     NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithCapacity:2];
     NSArray *pairs = [query componentsSeparatedByString:@"&"];
     for (NSString *pair in pairs) {
@@ -227,9 +230,15 @@
     return dict;
 }
 
-- (BOOL)application:(UIApplication*)application OpenURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation
+
+- (BOOL)callAppDelegateOpenUrl:(NSURL*)url annotation:(id)annotation sourceApplication:(NSString*)sourceApplication
 {
-    NSDictionary *params = [self parseQueryString:[url query]];
+    return [_appDelegate application:[UIApplication sharedApplication] openURL:url sourceApplication:sourceApplication annotation:annotation];
+}
+
+- (BOOL)handleApplication:(UIApplication*)application openURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation
+{
+    NSDictionary *params = [XLinks parseQueryString:[url query]];
     
     // Look for special keys
     NSString *uuid = [params objectForKey:URL_QUERY_UUID];
@@ -238,7 +247,7 @@
     
     NSLog(@"XLinks - appOpenWithURL: url=%@ application=%@ uuid=%@ scheme=%@ shortcode=%@ annotation=%@", url, sourceApplication, uuid, scheme, shortcode, annotation);
     
-    if (![self hasReportedInstall]) {
+    if (![[XLinks sharedInstance] hasReportedInstall]) {
         [[XLinks sharedInstance] reportInstall:NO shortCode:shortcode contextUUID:uuid url:url sourceApplication:sourceApplication];
     }
     
@@ -263,21 +272,14 @@
                                completionHandler:^(NSURLResponse *response,
                                                    NSData *data,
                                                    NSError *connectionError) {
-                                   NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                   NSLog(@"XLinks - openurl - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
                                    // TODO - do we want to retry this if failed?
                                }];
-        // Save a local copy -- not really necessary
-//        [[XLinks sharedInstance] saveInvocationContext:uuid sourceApplication:sourceApplication withShortCode:shortcode url:url];
     }
-    return  YES; //[self xlink__application:application OpenURL:url sourceApplication:sourceApplication annotation:annotation];
+    return  YES;
 }
 
-- (BOOL)callAppDelegateOpenUrl:(NSURL*)url annotation:(id)annotation sourceApplication:(NSString*)sourceApplication
-{
-    return [_appDelegate application:[UIApplication sharedApplication] openURL:url sourceApplication:sourceApplication annotation:annotation];
-}
-
-- (void)applicationDidBecomeActive:(UIApplication *)application
+- (void)handleApplicationDidBecomeActive:(UIApplication *)application
 {
     if ([[XLinks sharedInstance] hasReportedInstall]) {
         NSLog(@"XLinks - Reported install already. Skipping.");
@@ -296,7 +298,7 @@
                                                    NSData *data,
                                                    NSError *connectionError) {
                                    // Handle response
-                                   NSLog(@"XLinks - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
+                                   NSLog(@"XLinks - tryfp - Response from server: %d", [(NSHTTPURLResponse*)response statusCode]);
                                    
                                    // Check for response code. If it's not 200, then try to report via safari.
                                    if ([response class] == [NSHTTPURLResponse class]) {
@@ -365,6 +367,79 @@
     return networkInterfaces;
 }
 
-
-
 @end
+
+
+// Wrapper for swizzling
+
+static XRL *singleton;
+
+@interface  XRL()
++ (void) swizzleClass:(Class)originalClass originalSelector:(SEL)originalSelector swizzledClass:(Class)swizzledClass swizzledSelector:(SEL)swizzledSelector;
+@end
+
+@interface XRL()
+@property(atomic) id<UIApplicationDelegate> delegate;
+- (BOOL)xrl__application:(UIApplication*)application openURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation;
+- (void)xrl__applicationDidBecomeActive:(UIApplication *)application;
+@end
+
+
+@implementation XRL
+
++ (void) swizzleClass:(Class)originalClass originalSelector:(SEL)originalSelector swizzledClass:(Class)swizzledClass swizzledSelector:(SEL)swizzledSelector
+{
+    // The methods can be optional... in which case we will just add the implementation
+    Method originalMethod = class_getInstanceMethod(originalClass, originalSelector);
+    assert(originalMethod);
+    // Dynamically attach the xrl__ methods to the delegate instance.  Note this at runtime is similar to adding the methods
+    // statically via category methods.
+    Method swizzledMethod = class_getInstanceMethod(swizzledClass, swizzledSelector);
+    BOOL didAddMethod = class_addMethod(originalClass, swizzledSelector,
+                                        method_getImplementation(swizzledMethod),
+                                        method_getTypeEncoding(swizzledMethod));
+    // Once we added the methods, do the swap.
+    if (didAddMethod) {
+        method_exchangeImplementations(class_getInstanceMethod(originalClass, originalSelector), class_getInstanceMethod(originalClass, swizzledSelector));
+    }
+}
+
++ (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken
+{
+    // swizzle
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        
+        singleton = [[XRL alloc] init];
+        singleton.delegate = delegate;
+        
+        [XLinks initWithApplicationDelegate:delegate appUrlScheme:appUrlScheme apiToken:apiToken];
+        
+        // Check to see if delegate implements the protocol methods we care about.
+        bool hasBecomeActive = class_getInstanceMethod(object_getClass(delegate), @selector(applicationDidBecomeActive:)) != NULL;
+        bool hasApplicationOpenUrl = class_getInstanceMethod(object_getClass(delegate), @selector(application:openURL:sourceApplication:annotation:)) != NULL;
+
+        // This is important -- force the app developers to add the implementation.
+        NSLog(@"Asserting that UIApplicationDelegate:applicationDidBecomeActive and application:openURL:sourceApplication:annotation are implemented.");
+        assert(hasBecomeActive && hasApplicationOpenUrl);
+        
+        [XRL swizzleClass:object_getClass(delegate) originalSelector:@selector(applicationDidBecomeActive:) swizzledClass:object_getClass(singleton) swizzledSelector:@selector(xrl__applicationDidBecomeActive:)];
+        [XRL swizzleClass:object_getClass(delegate) originalSelector:@selector(application:openURL:sourceApplication:annotation:) swizzledClass:object_getClass(singleton) swizzledSelector:@selector(xrl__application:openURL:sourceApplication:annotation:)];
+    });
+}
+
+- (BOOL)xrl__application:(UIApplication*)application openURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation
+{
+    [XLinks application:application openURL:url sourceApplication:sourceApplication annotation:annotation];
+    return [self xrl__application:application openURL:url sourceApplication:sourceApplication annotation:annotation];
+}
+
+- (void)xrl__applicationDidBecomeActive:(UIApplication *)application
+{
+    [XLinks applicationDidBecomeActive:application];
+    [self xrl__applicationDidBecomeActive:application];
+}
+@end
+
+
+

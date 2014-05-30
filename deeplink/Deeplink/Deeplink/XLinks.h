@@ -7,6 +7,8 @@
 //
 
 #import <Foundation/Foundation.h>
+#import "XRL.h"
+
 
 @interface XLinks : NSObject
 
@@ -15,18 +17,15 @@
 + (NSString*)getAppUUID;
 
 
-- (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken;
++ (void)initWithApplicationDelegate:(id<UIApplicationDelegate>)delegate appUrlScheme:(NSString *)appUrlScheme apiToken:(NSString*)apiToken;
 
-- (BOOL)clearAppInstall;
-- (void)reportInstall;
-
-//- (NSDictionary*)saveInvocationContext:(NSString *)cookie sourceApplication:(NSString*)sourceApplication withShortCode:(NSString*)shortCode url:(NSURL*)url;
-//- (void)reportInstall:(BOOL)throughSafari shortCode:(NSString*)shortCode contextUUID:(NSString*)contextUuid;
-//- (BOOL)hasReportedInstall;
++ (BOOL)clearAppInstall;
++ (void)reportInstall;
 
 
 // Intercepts
-- (BOOL)application:(UIApplication*)application OpenURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation;
-- (void)applicationDidBecomeActive:(UIApplication *)application;
++ (BOOL)application:(UIApplication*)application openURL:(NSURL*)url sourceApplication:(NSString*)sourceApplication annotation:(id)annotation;
++ (void)applicationDidBecomeActive:(UIApplication *)application;
 
 @end
+

@@ -80,6 +80,7 @@
 		63178B12192D88BD007B7BEB /* TSUtils.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TSUtils.m; sourceTree = "<group>"; };
 		63178B1E192D9857007B7BEB /* QLTestViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLTestViewController.h; sourceTree = "<group>"; };
 		63178B1F192D9857007B7BEB /* QLTestViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = QLTestViewController.m; sourceTree = "<group>"; };
+		63178B2419383181007B7BEB /* XRL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = XRL.h; sourceTree = "<group>"; };
 		636A342C19234340009B4224 /* QLConfigViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QLConfigViewController.h; sourceTree = "<group>"; };
 		636A342D19234340009B4224 /* QLConfigViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = QLConfigViewController.m; sourceTree = "<group>"; };
 		63C49238191B508C00EF29EF /* Deeplink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Deeplink.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -215,6 +216,7 @@
 				636A342D19234340009B4224 /* QLConfigViewController.m */,
 				63178B1E192D9857007B7BEB /* QLTestViewController.h */,
 				63178B1F192D9857007B7BEB /* QLTestViewController.m */,
+				63178B2419383181007B7BEB /* XRL.h */,
 			);
 			path = Deeplink;
 			sourceTree = "<group>";

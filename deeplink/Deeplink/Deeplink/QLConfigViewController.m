@@ -51,11 +51,11 @@
 
 - (IBAction)onRemoveCookie:(id)sender {
     NSLog(@"Removing cookie file");
-    [[XLinks sharedInstance] clearAppInstall];
+    [XLinks clearAppInstall];
 }
 - (IBAction)onReportInstall:(id)sender {
     NSLog(@"Report install");
-    [[XLinks sharedInstance] reportInstall];
+    [XLinks reportInstall];
 }
 - (IBAction)onGenerateShortURL:(id)sender {
     NSString *json = [self buildJsonWithLongUrl:_contentLocation.text appStoreUrl:_appstoreUrl.text appDeeplinkUrl:_appDeeplinkURL.text];
